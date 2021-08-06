@@ -1,0 +1,366 @@
+﻿-- Register the behaviour
+behaviour("QuickThrow")
+
+function QuickThrow:Start()
+	-- Run when behaviour is created
+	GameEvents.onActorSpawn.AddListener(self,"onActorSpawn")
+	GameEvents.onActorDied.AddListener(self,"onActorDied")
+
+	self.QuickSlotKey1 = self.script.mutator.GetConfigurationString("QuickSlotKey1")
+	self.QuickSlotKey2 = self.script.mutator.GetConfigurationString("QuickSlotKey2")
+	self.QuickSlotKey3 = self.script.mutator.GetConfigurationString("QuickSlotKey3")
+	self.ShowHUD = self.script.mutator.GetConfigurationBool("ShowHUD")
+	self.ThrowSpeed = self.script.mutator.GetConfigurationFloat("ThrowSpeed")
+	self.updateDisplayPerFrame = self.script.mutator.GetConfigurationBool("updateDisplayPerFrame")
+
+	self.targets.Slot1GO.SetActive(false)
+	self.targets.Slot2GO.SetActive(false)
+	self.targets.Slot3GO.SetActive(false)
+
+	self:init()
+
+	self.slots = {}
+	self.txtCounts = {}
+	self.sprites = {}
+	self.keyBindTxts = {}
+	self.keybinds = {}
+
+	self.slots[0] = self.targets.Slot1GO
+	self.slots[1] = self.targets.Slot2GO
+	self.slots[2] = self.targets.Slot3GO
+
+	self.txtCounts[0] = self.targets.Slot1Count
+	self.txtCounts[1] = self.targets.Slot2Count
+	self.txtCounts[2] = self.targets.Slot3Count
+
+	self.sprites[0] = self.targets.Slot1Sprite
+	self.sprites[1] = self.targets.Slot2Sprite
+	self.sprites[2] = self.targets.Slot3Sprite
+
+	self.keyBindTxts[0] = self.targets.Slot1KeyBind
+	self.keyBindTxts[1] = self.targets.Slot2KeyBind
+	self.keyBindTxts[2] = self.targets.Slot3KeyBind
+
+	self.keybinds[0] = self.QuickSlotKey1
+	self.keybinds[1] = self.QuickSlotKey2
+	self.keybinds[2] = self.QuickSlotKey3
+
+	self.HotReloadKey = self.script.mutator.GetConfigurationString("HotReloadKey")
+
+	--Compat
+	self.hasCheckedForCompat = false
+	self.playerVoice = nil
+	self.enhancedHealth = nil
+	
+	local blackListString = self.script.mutator.GetConfigurationString("BlackList") .. ",THUMPER,C4"
+	self.blackList = {}
+	local blackListCount = 1
+	for word in string.gmatch(blackListString, '([^,]+)') do
+		print("<color=red>[Quick Throw] Added to black list: " .. word .. "</color>")
+		self.blackList[blackListCount] = word
+		blackListCount = blackListCount + 1
+	end
+
+	local tagsToAllow = self.script.mutator.GetConfigurationString("Tags")
+	self.tags = {}
+	local tagCount = 1
+	for word in string.gmatch(tagsToAllow, '([^,]+)') do
+		print("<color=green>[Quick Throw] Added to tags: " .. word .. "</color>")
+		self.tags[tagCount] = word
+		tagCount = tagCount + 1
+	end
+
+	local whiteListString = self.script.mutator.GetConfigurationString("WhiteList") .. ",Armor,Stim Shot,Bandage"
+	self.whiteList = {}
+	local whiteListCount = 1
+	for word in string.gmatch(whiteListString, '([^,]+)') do
+		print("<color=green>[Quick Throw] Added to white list: " .. word .. "</color>")
+		self.whiteList[whiteListCount] = word
+		whiteListCount = whiteListCount + 1
+	end
+	
+	self.doLoadOutCheck = true
+	self.script.AddValueMonitor("monitorHUDVisibility", "onHUDVisibilityChange")
+	print("<color=aqua>[Quick Throw] Initialized v1.1!</color>")
+end
+
+function QuickThrow:init()
+	self.throwableCount = 0
+	self.isThrowing = false
+	self.throwables = {}
+	self.throwableToUse = nil
+	self.curthrowable = nil
+
+	self.lastActiveWeapon = nil
+	self.lastActiveWeaponIndex = 0
+	self.lastActiveWeaponAmmo = 0
+	self.lastActiveWeaponAmmoReserve = 0
+	self.lastActiveWeaponMaxReserve = 0
+
+	self.timer = 0
+
+	self.cooldown = false
+
+	self.hasThrown = false
+	self.wasInterrupted = false
+	self.isSpawnUiOpen = false
+end
+
+function QuickThrow:Update()
+	-- Run every frame
+
+	if(Input.GetKeyDown(string.lower(self.HotReloadKey)) and self.isThrowing == false) then
+		self:evaluateLoadout()
+	end
+	
+	if(self.hasCheckedForCompat) then
+		if (SpawnUi.isOpen and self.isSpawnUiOpen == false) then
+			self.isSpawnUiOpen = true
+			for i = 0, 2, 1 do
+				self.slots[i].SetActive(false)
+			end
+		elseif (SpawnUi.isOpen == false and self.isSpawnUiOpen) then
+			self.isSpawnUiOpen = false
+			print("<color=yellow>[Quick Throw] Re-evaluate loadout!</color>")
+			self:evaluateLoadout()
+		end
+	end
+	
+	if(SpawnUi.isOpen == false and self.isThrowing == false and Player.actor.isFallenOver == false and Player.actor.isInWater == false and self.throwableCount > 0 and Player.actor.isSprinting == false) then
+		if Input.GetKeyDown(string.lower(self.QuickSlotKey1)) then
+			self:Throw(0)
+		elseif Input.GetKeyDown(string.lower(self.QuickSlotKey2)) and self.throwableCount > 1 then
+			self:Throw(1)
+		elseif Input.GetKeyDown(string.lower(self.QuickSlotKey3)) and self.throwableCount > 2 then
+			self:Throw(2)
+		end
+	end
+
+	if(self.hasThrown and self.isThrowing) then
+		self.timer = self.timer + (0.1 * Time.deltaTime)
+	end
+
+	if(self.timer > 0.025 and self.cooldown == true) or (self.wasInterrupted and self.isThrowing and Player.actor.isFallenOver == false) then
+		print("<color=yellow>[Quick Throw] Return 1 (ignore this if everything is working fine)</color>")
+		self:ReturnWeapon(true)
+	elseif (Player.actor.activeWeapon ~= self.curthrowable) and self.isThrowing  then
+		print("<color=yellow>[Quick Throw] Return 2 (ignore this if everything is working fine)</color>")
+		self:ReturnWeapon(false)
+	elseif ((Player.actor.isFallenOver or Player.actor.isInWater) and self.isThrowing) then
+		self.wasInterrupted = true
+	end
+
+	if(self.throwableCount > 0 and (Player.actor.isResupplyingAmmo or self.updateDisplayPerFrame) and self.ShowHUD) then
+		self:UpdateDisplay()
+	end
+end
+
+function QuickThrow:UpdateDisplay()
+	for i = 0, #self.throwables, 1 do
+		if self.throwables[i].spareAmmo > 0 then
+			self.txtCounts[#self.throwables-i].text = self.throwables[i].ammo + self.throwables[i].spareAmmo
+		else
+			if(self.throwables[i].ammo > 0) then
+				self.txtCounts[#self.throwables-i].text = self.throwables[i].ammo
+			else
+				self.txtCounts[#self.throwables-i].text = 0
+			end
+		end
+	end
+end
+
+function QuickThrow:Throw(index)
+	self.throwableToUse = nil
+	if(self.throwables[index].spareAmmo > 0 or self.throwables[index].ammo > 0) or self.throwables[index].weaponEntry.name == "Armor" then
+		self.throwableToUse = self.throwables[index]
+	end
+	if(self.throwableToUse and self.throwableToUse ~= Player.actor.activeWeapon) then
+		self.hasThrown = false
+		self.lastActiveWeapon = Player.actor.activeWeapon.weaponEntry
+		self.lastActiveWeaponIndex = Player.actor.activeWeapon.slot
+		self.lastActiveWeaponAmmo = Player.actor.activeWeapon.ammo
+		self.lastActiveWeaponAmmoReserve = Player.actor.activeWeapon.spareAmmo
+		self.lastActiveWeaponMaxReserve = Player.actor.activeWeapon.maxSpareAmmo
+		
+		Player.actor.EquipNewWeaponEntry(self.throwableToUse.weaponEntry, self.lastActiveWeaponIndex, true)
+		if self.enhancedHealth and Player.actor.activeWeapon.weaponEntry.name == "Bandage" then
+			self.enhancedHealth.self:addBandageListener(Player.actor.activeWeapon)
+		end
+		Player.actor.activeWeapon.maxSpareAmmo = -1
+		if self.enhancedHealth and self.enhancedHealth.self.doQuickAnim and Player.actor.activeWeapon.weaponEntry.name == "Stim Shot" then
+			Player.actor.activeWeapon.animator.SetTrigger("quickThrow")
+		else
+			Player.actor.activeWeapon.animator.speed = self.ThrowSpeed
+			Player.actor.activeWeapon.animator.SetTrigger("throw")
+		end
+		self.timer = 0
+		self.isThrowing = true;
+		self.cooldown = true
+		self.curthrowable = Player.actor.activeWeapon
+		self.curthrowable.onFire.AddListener(self,"onFire")
+	end
+end
+
+function QuickThrow:ReturnWeapon(forceEquip)
+	if self.curthrowable == nil then return end
+	
+	print("<color=yellow>[Quick Throw] returning weapon: " .. self.lastActiveWeapon.name .. " to slot " .. self.lastActiveWeaponIndex .. "</color>")
+	 
+	Player.actor.EquipNewWeaponEntry(self.lastActiveWeapon, self.lastActiveWeaponIndex, forceEquip)
+
+	
+	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].ammo = self.lastActiveWeaponAmmo
+	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].spareAmmo = self.lastActiveWeaponAmmoReserve
+	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].maxSpareAmmo = self.lastActiveWeaponMaxReserve
+	
+	if forceEquip then
+		Player.actor.activeWeapon.animator.SetTrigger("unholster")
+	end
+
+
+	if self.enhancedHealth and Player.actor.activeWeapon.weaponEntry.name == "Bandage" then
+		self.enhancedHealth.self:addBandageListener(Player.actor.activeWeapon)
+	end
+
+	if self.playerVoice then
+		self.playerVoice.self:FindGrenades()
+	end
+
+	if self.lastActiveWeaponIndex > 1 then
+		self:evaluateLoadout()
+	end
+
+	self.isThrowing = false
+	self.cooldown = false
+	self.curthrowable = nil
+	self.hasThrown = false
+	self.wasInterrupted = false
+end
+
+function QuickThrow:isValidWeapon(weapon)
+	for i, name in ipairs(self.blackList) do
+		if weapon.gameObject.name == name then 
+			print("<color=red>[Quick Throw] " .. weapon.gameObject.name .. " is black listed.</color>") 
+			return false
+		end
+	end
+	for i, name in ipairs(self.whiteList) do
+		if weapon.gameObject.name == name then 
+			print("<color=green>[Quick Throw] " .. weapon.gameObject.name .. " is whitelisted listed.</color>") 
+			return true
+		end
+	end
+	for y, tag in ipairs(weapon.weaponEntry.tags) do
+		print("<color=yellow>[Quick Throw] " .. weapon.gameObject.name .. " has tag " .. tag .. "</color>")
+		for x, t in ipairs(self.tags) do
+			if tag == t then return true end
+		end
+	end
+	return false
+end
+
+function QuickThrow:onFire()
+	print("<color=green>[Quick Throw] Throw!</color>")
+	if self.playerVoice then
+		self.playerVoice.self:onThrow(self.throwableToUse.weaponEntry)
+	end
+	if self.enhancedHealth and self.throwableToUse.weaponEntry.name == "Stim Shot" then
+		self.enhancedHealth.self:onStim()
+	end
+
+	self.hasThrown = true
+	if(self.throwableToUse.spareAmmo > 0) then
+		self.throwableToUse.spareAmmo = self.throwableToUse.spareAmmo - 1
+	else
+		self.throwableToUse.ammo = 0
+	end
+	self:UpdateDisplay()
+end
+
+function QuickThrow:onStandardThrow()
+	self:UpdateDisplay()
+end
+
+function QuickThrow:onActorDied(actor,source,isSilent)
+	if(actor.isPlayer) then
+		self:init()
+		self.targets.Slot1GO.SetActive(false)
+		self.targets.Slot2GO.SetActive(false)
+		self.targets.Slot3GO.SetActive(false)
+	end
+end
+
+function QuickThrow:checkForCompat()
+	if self.playerVoice == nil then
+		local playerVoiceObj = self.gameObject.Find("PlayerVoice")
+		if playerVoiceObj then
+			self.playerVoice = playerVoiceObj.GetComponent(ScriptedBehaviour)
+			print("<color=green>[Quick Throw] Found player voice object.</color>")
+		else
+			print("<color=red>[Quick Throw] No player voice object found.</color>")
+		end
+	end
+
+	if self.enhancedHealth == nil then
+		local enhancedHealthObj = self.gameObject.Find("EnhancedHealth")
+		if enhancedHealthObj then
+			self.enhancedHealth = enhancedHealthObj.GetComponent(ScriptedBehaviour)
+			print("<color=green>[Quick Throw] Found enhanced health object.</color>")
+		else
+			print("<color=red>[Quick Throw] No enhanced health object found.</color>")
+		end
+	end
+
+	self.hasCheckedForCompat = true
+end
+
+function QuickThrow:evaluateLoadout()
+	self.throwableCount = 0
+	self.throwables = {}
+	for i, weapon in ipairs(Player.actor.weaponSlots) do
+		if(self:isValidWeapon(weapon)) then
+			weapon.onFire.AddListener(self,"onStandardThrow");
+			self.throwables[self.throwableCount] = weapon
+			self.throwableCount = self.throwableCount + 1
+		end
+	end
+	if(self.throwableCount > 0) then
+		for i = 0, #self.throwables, 1 do
+			self.slots[#self.throwables-i].SetActive(self.ShowHUD)
+			self.sprites[#self.throwables-i].sprite = self.throwables[i].uiSprite
+			if string.find(self.keybinds[i], "mouse") then
+				local num = nil
+				for word in string.gmatch(self.keybinds[i], '%S+') do
+					num = word
+				end
+				if num then
+					self.keyBindTxts[#self.throwables-i].text = "M" .. num
+					self.keyBindTxts[#self.throwables-i].fontSize = 10
+				end
+			else
+				self.keyBindTxts[#self.throwables-i].text = self.keybinds[i]
+				self.keyBindTxts[#self.throwables-i].fontSize = 14
+			end
+			self:UpdateDisplay()
+		end
+	end
+end
+
+function QuickThrow:onActorSpawn(actor)
+	if actor.isPlayer then
+		self:init()
+		self.targets.Canvas.SetActive(GameManager.hudPlayerEnabled)
+		if(self.hasCheckedForCompat == false) then
+			self:checkForCompat()
+		end
+		self:evaluateLoadout()
+	end
+end
+
+function QuickThrow:monitorHUDVisibility()
+	return GameManager.hudPlayerEnabled
+end
+
+function QuickThrow:onHUDVisibilityChange()
+	self.targets.Canvas.SetActive(not Player.actor.isDead and GameManager.hudPlayerEnabled)
+end
