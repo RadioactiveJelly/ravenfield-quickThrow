@@ -82,7 +82,7 @@ function QuickThrow:Start()
 	self.doLoadOutCheck = true
 	self.script.AddValueMonitor("monitorHUDVisibility", "onHUDVisibilityChange")
 	self.script.StartCoroutine(self:FindLoadoutChanger())
-	print("<color=aqua>[Quick Throw] Initialized v1.2.0!</color>")
+	print("<color=aqua>[Quick Throw] Initialized v1.2.1!</color>")
 end
 
 function QuickThrow:init()
@@ -120,7 +120,7 @@ function QuickThrow:Update()
 			for i = 0, 2, 1 do
 				self.slots[i].SetActive(false)
 			end
-		elseif (SpawnUi.isOpen == false and self.isSpawnUiOpen) then
+		elseif (SpawnUi.isOpen == false and self.isSpawnUiOpen and not Player.actor.isDead) then
 			self.isSpawnUiOpen = false
 			for i = 0, #self.throwables, 1 do
 				self.slots[#self.throwables-i].SetActive(self.ShowHUD)
