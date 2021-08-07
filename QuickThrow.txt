@@ -81,7 +81,8 @@ function QuickThrow:Start()
 	
 	self.doLoadOutCheck = true
 	self.script.AddValueMonitor("monitorHUDVisibility", "onHUDVisibilityChange")
-	print("<color=aqua>[Quick Throw] Initialized v1.1!</color>")
+	self.script.StartCoroutine(self:FindLoadoutChanger())
+	print("<color=aqua>[Quick Throw] Initialized v1.2.0!</color>")
 end
 
 function QuickThrow:init()
@@ -121,8 +122,9 @@ function QuickThrow:Update()
 			end
 		elseif (SpawnUi.isOpen == false and self.isSpawnUiOpen) then
 			self.isSpawnUiOpen = false
-			print("<color=yellow>[Quick Throw] Re-evaluate loadout!</color>")
-			self:evaluateLoadout()
+			for i = 0, #self.throwables, 1 do
+				self.slots[#self.throwables-i].SetActive(self.ShowHUD)
+			end
 		end
 	end
 	
@@ -161,8 +163,10 @@ function QuickThrow:UpdateDisplay()
 			self.txtCounts[#self.throwables-i].text = self.throwables[i].ammo + self.throwables[i].spareAmmo
 		else
 			if(self.throwables[i].ammo > 0) then
+				self.txtCounts[#self.throwables-i].color = Color.white
 				self.txtCounts[#self.throwables-i].text = self.throwables[i].ammo
 			else
+				self.txtCounts[#self.throwables-i].color = Color.red
 				self.txtCounts[#self.throwables-i].text = 0
 			end
 		end
@@ -238,21 +242,21 @@ function QuickThrow:ReturnWeapon(forceEquip)
 end
 
 function QuickThrow:isValidWeapon(weapon)
-	for i, name in ipairs(self.blackList) do
+	for i, name in pairs(self.blackList) do
 		if weapon.gameObject.name == name then 
 			print("<color=red>[Quick Throw] " .. weapon.gameObject.name .. " is black listed.</color>") 
 			return false
 		end
 	end
-	for i, name in ipairs(self.whiteList) do
+	for i, name in pairs(self.whiteList) do
 		if weapon.gameObject.name == name then 
 			print("<color=green>[Quick Throw] " .. weapon.gameObject.name .. " is whitelisted listed.</color>") 
 			return true
 		end
 	end
-	for y, tag in ipairs(weapon.weaponEntry.tags) do
+	for y, tag in pairs(weapon.weaponEntry.tags) do
 		print("<color=yellow>[Quick Throw] " .. weapon.gameObject.name .. " has tag " .. tag .. "</color>")
-		for x, t in ipairs(self.tags) do
+		for x, t in pairs(self.tags) do
 			if tag == t then return true end
 		end
 	end
@@ -317,7 +321,7 @@ end
 function QuickThrow:evaluateLoadout()
 	self.throwableCount = 0
 	self.throwables = {}
-	for i, weapon in ipairs(Player.actor.weaponSlots) do
+	for i, weapon in pairs(Player.actor.weaponSlots) do
 		if(self:isValidWeapon(weapon)) then
 			weapon.onFire.AddListener(self,"onStandardThrow");
 			self.throwables[self.throwableCount] = weapon
@@ -344,6 +348,33 @@ function QuickThrow:evaluateLoadout()
 			self:UpdateDisplay()
 		end
 	end
+end
+
+function QuickThrow:FindLoadoutChanger()
+	return function()
+		coroutine.yield(WaitForSeconds(0.15))
+		local loadOutChangerObj = self.gameObject.Find("LoadoutChangeScript(Clone)")
+		if loadOutChangerObj then
+			self.loadoutChanger = loadOutChangerObj.GetComponent(ScriptedBehaviour)
+			self.loadoutChanger.self.button.GetComponent(Button).onClick.AddListener(self,"onOverlayClicked")
+			print("<color=aqua>[Quick Throw] Loadout Changer mutator found.</color>")
+		else
+			print("<color=red>[Quick Throw] Loadout Changer mutator not found.</color>")
+		end
+	end
+end
+
+function QuickThrow:onOverlayClicked()
+	if not Player.actor.isDead then
+		self.script.StartCoroutine(self:onLoadOutChanged())
+	end
+end
+
+function QuickThrow:onLoadOutChanged()
+	return function()
+        coroutine.yield(WaitForSeconds(0.1))
+		self:evaluateLoadout()
+    end
 end
 
 function QuickThrow:onActorSpawn(actor)
