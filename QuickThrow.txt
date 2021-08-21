@@ -1,4 +1,4 @@
-﻿-- Register the behaviour
+-- Register the behaviour
 behaviour("QuickThrow")
 
 function QuickThrow:Start()
@@ -9,6 +9,7 @@ function QuickThrow:Start()
 	self.QuickSlotKey1 = self.script.mutator.GetConfigurationString("QuickSlotKey1")
 	self.QuickSlotKey2 = self.script.mutator.GetConfigurationString("QuickSlotKey2")
 	self.QuickSlotKey3 = self.script.mutator.GetConfigurationString("QuickSlotKey3")
+	self.toggleThrowMode = self.script.mutator.GetConfigurationString("toggleThrowMode")
 	self.ShowHUD = self.script.mutator.GetConfigurationBool("ShowHUD")
 	self.ThrowSpeed = self.script.mutator.GetConfigurationFloat("ThrowSpeed")
 	self.updateDisplayPerFrame = self.script.mutator.GetConfigurationBool("updateDisplayPerFrame")
@@ -16,6 +17,8 @@ function QuickThrow:Start()
 	self.targets.Slot1GO.SetActive(false)
 	self.targets.Slot2GO.SetActive(false)
 	self.targets.Slot3GO.SetActive(false)
+
+	self.longThrow = false
 
 	self:init()
 
@@ -45,6 +48,8 @@ function QuickThrow:Start()
 	self.keybinds[1] = self.QuickSlotKey2
 	self.keybinds[2] = self.QuickSlotKey3
 
+	self.targets.Canvas.SetActive(false)
+
 	self.HotReloadKey = self.script.mutator.GetConfigurationString("HotReloadKey")
 
 	--Compat
@@ -57,7 +62,7 @@ function QuickThrow:Start()
 	local blackListCount = 1
 	for word in string.gmatch(blackListString, '([^,]+)') do
 		print("<color=red>[Quick Throw] Added to black list: " .. word .. "</color>")
-		self.blackList[blackListCount] = word
+		self.blackList[blackListCount] = string.lower(word)
 		blackListCount = blackListCount + 1
 	end
 
@@ -66,7 +71,7 @@ function QuickThrow:Start()
 	local tagCount = 1
 	for word in string.gmatch(tagsToAllow, '([^,]+)') do
 		print("<color=green>[Quick Throw] Added to tags: " .. word .. "</color>")
-		self.tags[tagCount] = word
+		self.tags[tagCount] = string.lower(word)
 		tagCount = tagCount + 1
 	end
 
@@ -75,14 +80,14 @@ function QuickThrow:Start()
 	local whiteListCount = 1
 	for word in string.gmatch(whiteListString, '([^,]+)') do
 		print("<color=green>[Quick Throw] Added to white list: " .. word .. "</color>")
-		self.whiteList[whiteListCount] = word
+		self.whiteList[whiteListCount] = string.lower(word)
 		whiteListCount = whiteListCount + 1
 	end
 	
 	self.doLoadOutCheck = true
 	self.script.AddValueMonitor("monitorHUDVisibility", "onHUDVisibilityChange")
 	self.script.StartCoroutine(self:FindLoadoutChanger())
-	print("<color=aqua>[Quick Throw] Initialized v1.2.1!</color>")
+	print("<color=aqua>[Quick Throw] Initialized v1.4.4!</color>")
 end
 
 function QuickThrow:init()
@@ -127,7 +132,7 @@ function QuickThrow:Update()
 			end
 		end
 	end
-	
+
 	if(SpawnUi.isOpen == false and self.isThrowing == false and Player.actor.isFallenOver == false and Player.actor.isInWater == false and self.throwableCount > 0 and Player.actor.isSprinting == false) then
 		if Input.GetKeyDown(string.lower(self.QuickSlotKey1)) then
 			self:Throw(0)
@@ -136,6 +141,11 @@ function QuickThrow:Update()
 		elseif Input.GetKeyDown(string.lower(self.QuickSlotKey3)) and self.throwableCount > 2 then
 			self:Throw(2)
 		end
+	end
+
+	if Input.GetKeyDown(string.lower(self.toggleThrowMode)) then
+		self.longThrow = not self.longThrow
+		self.targets.ThrowModeText.gameObject.SetActive(self.longThrow)
 	end
 
 	if(self.hasThrown and self.isThrowing) then
@@ -160,6 +170,7 @@ end
 function QuickThrow:UpdateDisplay()
 	for i = 0, #self.throwables, 1 do
 		if self.throwables[i].spareAmmo > 0 then
+			self.txtCounts[#self.throwables-i].color = Color.white
 			self.txtCounts[#self.throwables-i].text = self.throwables[i].ammo + self.throwables[i].spareAmmo
 		else
 			if(self.throwables[i].ammo > 0) then
@@ -186,22 +197,37 @@ function QuickThrow:Throw(index)
 		self.lastActiveWeaponAmmoReserve = Player.actor.activeWeapon.spareAmmo
 		self.lastActiveWeaponMaxReserve = Player.actor.activeWeapon.maxSpareAmmo
 		
+		local isAiming = Player.actor.activeWeapon.isAiming
+
 		Player.actor.EquipNewWeaponEntry(self.throwableToUse.weaponEntry, self.lastActiveWeaponIndex, true)
 		if self.enhancedHealth and Player.actor.activeWeapon.weaponEntry.name == "Bandage" then
 			self.enhancedHealth.self:addBandageListener(Player.actor.activeWeapon)
 		end
+		Player.actor.activeWeapon.spareAmmo = -1
 		Player.actor.activeWeapon.maxSpareAmmo = -1
 		if self.enhancedHealth and self.enhancedHealth.self.doQuickAnim and Player.actor.activeWeapon.weaponEntry.name == "Stim Shot" then
 			Player.actor.activeWeapon.animator.SetTrigger("quickThrow")
 		else
-			Player.actor.activeWeapon.animator.speed = self.ThrowSpeed
-			Player.actor.activeWeapon.animator.SetTrigger("throw")
+			self.script.StartCoroutine(self:UseUnholsterTimeDelay())
 		end
 		self.timer = 0
 		self.isThrowing = true;
 		self.cooldown = true
 		self.curthrowable = Player.actor.activeWeapon
 		self.curthrowable.onFire.AddListener(self,"onFire")
+	end
+end
+
+function QuickThrow:UseUnholsterTimeDelay()
+	return function()
+		coroutine.yield(WaitForSeconds(Player.actor.activeWeapon.unholsterTime/2.5))
+		if (Player.actor.activeWeapon == self.curthrowable) then
+			Player.actor.activeWeapon.animator.speed = self.ThrowSpeed
+			Player.actor.activeWeapon.animator.SetTrigger("throw")
+			if isAiming or self.longThrow then
+				Player.actor.activeWeapon.animator.SetBool("aim", true)
+			end
+		end
 	end
 end
 
@@ -243,13 +269,13 @@ end
 
 function QuickThrow:isValidWeapon(weapon)
 	for i, name in pairs(self.blackList) do
-		if weapon.gameObject.name == name then 
+		if string.lower(weapon.gameObject.name) == name then 
 			print("<color=red>[Quick Throw] " .. weapon.gameObject.name .. " is black listed.</color>") 
 			return false
 		end
 	end
 	for i, name in pairs(self.whiteList) do
-		if weapon.gameObject.name == name then 
+		if string.lower(weapon.gameObject.name) == name then 
 			print("<color=green>[Quick Throw] " .. weapon.gameObject.name .. " is whitelisted listed.</color>") 
 			return true
 		end
@@ -257,7 +283,9 @@ function QuickThrow:isValidWeapon(weapon)
 	for y, tag in pairs(weapon.weaponEntry.tags) do
 		print("<color=yellow>[Quick Throw] " .. weapon.gameObject.name .. " has tag " .. tag .. "</color>")
 		for x, t in pairs(self.tags) do
-			if tag == t then return true end
+			if t == string.lower(tag) then 
+				return true 
+			end
 		end
 	end
 	return false
@@ -268,9 +296,8 @@ function QuickThrow:onFire()
 	if self.playerVoice then
 		self.playerVoice.self:onThrow(self.throwableToUse.weaponEntry)
 	end
-	if self.enhancedHealth and self.throwableToUse.weaponEntry.name == "Stim Shot" then
-		self.enhancedHealth.self:onStim()
-	end
+
+	Player.actor.activeWeapon.ammo = 0
 
 	self.hasThrown = true
 	if(self.throwableToUse.spareAmmo > 0) then
@@ -291,6 +318,7 @@ function QuickThrow:onActorDied(actor,source,isSilent)
 		self.targets.Slot1GO.SetActive(false)
 		self.targets.Slot2GO.SetActive(false)
 		self.targets.Slot3GO.SetActive(false)
+		self.targets.Canvas.SetActive(false)
 	end
 end
 
