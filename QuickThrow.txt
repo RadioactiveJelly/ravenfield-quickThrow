@@ -1,6 +1,10 @@
 -- Register the behaviour
 behaviour("QuickThrow")
 
+function QuickThrow:Awake()
+	self.gameObject.name = "QuickThrow"
+end
+
 function QuickThrow:Start()
 	-- Run when behaviour is created
 	GameEvents.onActorSpawn.AddListener(self,"onActorSpawn")
@@ -48,6 +52,8 @@ function QuickThrow:Start()
 	self.keybinds[1] = self.QuickSlotKey2
 	self.keybinds[2] = self.QuickSlotKey3
 
+	self.throwModeText = self.targets.ThrowModeText
+
 	self.targets.Canvas.SetActive(false)
 
 	self.HotReloadKey = self.script.mutator.GetConfigurationString("HotReloadKey")
@@ -87,7 +93,7 @@ function QuickThrow:Start()
 	self.doLoadOutCheck = true
 	self.script.AddValueMonitor("monitorHUDVisibility", "onHUDVisibilityChange")
 	self.script.StartCoroutine(self:FindLoadoutChanger())
-	print("<color=aqua>[Quick Throw] Initialized v1.4.4!</color>")
+	print("<color=aqua>[Quick Throw] Initialized v1.5.0!</color>")
 end
 
 function QuickThrow:init()
@@ -145,7 +151,7 @@ function QuickThrow:Update()
 
 	if Input.GetKeyDown(string.lower(self.toggleThrowMode)) then
 		self.longThrow = not self.longThrow
-		self.targets.ThrowModeText.gameObject.SetActive(self.longThrow)
+		self.throwModeText.gameObject.SetActive(self.longThrow)
 	end
 
 	if(self.hasThrown and self.isThrowing) then
@@ -315,9 +321,9 @@ end
 function QuickThrow:onActorDied(actor,source,isSilent)
 	if(actor.isPlayer) then
 		self:init()
-		self.targets.Slot1GO.SetActive(false)
-		self.targets.Slot2GO.SetActive(false)
-		self.targets.Slot3GO.SetActive(false)
+		self.slots[0].SetActive(false)
+		self.slots[1].SetActive(false)
+		self.slots[2].SetActive(false)
 		self.targets.Canvas.SetActive(false)
 	end
 end
@@ -422,4 +428,29 @@ end
 
 function QuickThrow:onHUDVisibilityChange()
 	self.targets.Canvas.SetActive(not Player.actor.isDead and GameManager.hudPlayerEnabled)
+end
+
+function QuickThrow:ReplaceHUD(newHUD)
+	self.slots = {}
+	self.txtCounts = {}
+	self.sprites = {}
+	self.keyBindTxts = {}
+
+	self.slots[0] = newHUD.slots[0]
+	self.slots[1] = newHUD.slots[1]
+	self.slots[2] = newHUD.slots[2]
+
+	self.txtCounts[0] = newHUD.txtCounts[0]
+	self.txtCounts[1] = newHUD.txtCounts[1]
+	self.txtCounts[2] = newHUD.txtCounts[2]
+
+	self.sprites[0] = newHUD.sprites[0]
+	self.sprites[1] = newHUD.sprites[1]
+	self.sprites[2] = newHUD.sprites[2]
+
+	self.keyBindTxts[0] = newHUD.keyBindTxts[0]
+	self.keyBindTxts[1] = newHUD.keyBindTxts[1]
+	self.keyBindTxts[2] = newHUD.keyBindTxts[2]
+
+	self.throwModeText = newHUD.throwModeText
 end
