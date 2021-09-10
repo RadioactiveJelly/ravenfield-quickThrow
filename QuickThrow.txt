@@ -62,7 +62,9 @@ function QuickThrow:Start()
 	self.hasCheckedForCompat = false
 	self.playerVoice = nil
 	self.enhancedHealth = nil
-	
+	self.isLocked = false
+
+
 	local blackListString = self.script.mutator.GetConfigurationString("BlackList") .. ",THUMPER,C4"
 	self.blackList = {}
 	local blackListCount = 1
@@ -93,7 +95,7 @@ function QuickThrow:Start()
 	self.doLoadOutCheck = true
 	self.script.AddValueMonitor("monitorHUDVisibility", "onHUDVisibilityChange")
 	self.script.StartCoroutine(self:FindLoadoutChanger())
-	print("<color=aqua>[Quick Throw] Initialized v1.5.0!</color>")
+	print("<color=aqua>[Quick Throw] Initialized v1.6.0!</color>")
 end
 
 function QuickThrow:init()
@@ -108,6 +110,7 @@ function QuickThrow:init()
 	self.lastActiveWeaponAmmo = 0
 	self.lastActiveWeaponAmmoReserve = 0
 	self.lastActiveWeaponMaxReserve = 0
+	self.lastActiveWeaponAltWeaponData = {}
 
 	self.timer = 0
 
@@ -139,7 +142,7 @@ function QuickThrow:Update()
 		end
 	end
 
-	if(SpawnUi.isOpen == false and self.isThrowing == false and Player.actor.isFallenOver == false and Player.actor.isInWater == false and self.throwableCount > 0 and Player.actor.isSprinting == false) then
+	if(SpawnUi.isOpen == false and self.isThrowing == false and Player.actor.isFallenOver == false and Player.actor.isInWater == false and self.throwableCount > 0 and Player.actor.isSprinting == false and not self.isLocked) then
 		if Input.GetKeyDown(string.lower(self.QuickSlotKey1)) then
 			self:Throw(0)
 		elseif Input.GetKeyDown(string.lower(self.QuickSlotKey2)) and self.throwableCount > 1 then
@@ -168,7 +171,7 @@ function QuickThrow:Update()
 		self.wasInterrupted = true
 	end
 
-	if(self.throwableCount > 0 and (Player.actor.isResupplyingAmmo or self.updateDisplayPerFrame) and self.ShowHUD) then
+	if(self.throwableCount > 0 and (Player.actor.isResupplyingAmmo or self.updateDisplayPerFrame) and self.ShowHUD and not self.isLocked) then
 		self:UpdateDisplay()
 	end
 end
@@ -197,12 +200,21 @@ function QuickThrow:Throw(index)
 	end
 	if(self.throwableToUse and self.throwableToUse ~= Player.actor.activeWeapon) then
 		self.hasThrown = false
+
 		self.lastActiveWeapon = Player.actor.activeWeapon.weaponEntry
 		self.lastActiveWeaponIndex = Player.actor.activeWeapon.slot
 		self.lastActiveWeaponAmmo = Player.actor.activeWeapon.ammo
 		self.lastActiveWeaponAmmoReserve = Player.actor.activeWeapon.spareAmmo
 		self.lastActiveWeaponMaxReserve = Player.actor.activeWeapon.maxSpareAmmo
 		
+		self.lastActiveWeaponAltWeaponData = {}
+		for i = 1, #Player.actor.activeWeapon.alternativeWeapons, 1 do
+			local altWeaponData = {}
+			altWeaponData.ammo = Player.actor.activeWeapon.alternativeWeapons[i].ammo
+			altWeaponData.spareAmmo = Player.actor.activeWeapon.alternativeWeapons[i].spareAmmo
+			self.lastActiveWeaponAltWeaponData[i] = altWeaponData
+		end
+
 		local isAiming = Player.actor.activeWeapon.isAiming
 
 		Player.actor.EquipNewWeaponEntry(self.throwableToUse.weaponEntry, self.lastActiveWeaponIndex, true)
@@ -249,10 +261,11 @@ function QuickThrow:ReturnWeapon(forceEquip)
 	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].spareAmmo = self.lastActiveWeaponAmmoReserve
 	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].maxSpareAmmo = self.lastActiveWeaponMaxReserve
 	
+	self.script.StartCoroutine(self:ApplyAltWeaponAmmo(self.lastActiveWeaponIndex))
+
 	if forceEquip then
 		Player.actor.activeWeapon.animator.SetTrigger("unholster")
 	end
-
 
 	if self.enhancedHealth and Player.actor.activeWeapon.weaponEntry.name == "Bandage" then
 		self.enhancedHealth.self:addBandageListener(Player.actor.activeWeapon)
@@ -271,6 +284,19 @@ function QuickThrow:ReturnWeapon(forceEquip)
 	self.curthrowable = nil
 	self.hasThrown = false
 	self.wasInterrupted = false
+end
+
+function QuickThrow:ApplyAltWeaponAmmo(index)
+	return function()
+		coroutine.yield(WaitForSeconds(0.5))
+		if(self.lastActiveWeaponIndex ~= index) then
+			return
+		end
+		for i = 1, #Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].alternativeWeapons, 1 do
+			Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].alternativeWeapons[i].ammo = self.lastActiveWeaponAltWeaponData[i].ammo
+			Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].alternativeWeapons[i].spareAmmo = self.lastActiveWeaponAltWeaponData[i].spareAmmo
+		end
+	end
 end
 
 function QuickThrow:isValidWeapon(weapon)
