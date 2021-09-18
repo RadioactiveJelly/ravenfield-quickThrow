@@ -252,11 +252,12 @@ end
 function QuickThrow:ReturnWeapon(forceEquip)
 	if self.curthrowable == nil then return end
 	
+	self.curThrowable.onFire.RemoveListener(self,"onFire")
+
 	print("<color=yellow>[Quick Throw] returning weapon: " .. self.lastActiveWeapon.name .. " to slot " .. self.lastActiveWeaponIndex .. "</color>")
 	 
 	Player.actor.EquipNewWeaponEntry(self.lastActiveWeapon, self.lastActiveWeaponIndex, forceEquip)
 
-	
 	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].ammo = self.lastActiveWeaponAmmo
 	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].spareAmmo = self.lastActiveWeaponAmmoReserve
 	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].maxSpareAmmo = self.lastActiveWeaponMaxReserve
@@ -346,6 +347,9 @@ end
 
 function QuickThrow:onActorDied(actor,source,isSilent)
 	if(actor.isPlayer) then
+		for i, throwable in pairs(self.throwables) do
+			throwable.onFire.RemoveListener(self,"onStandardThrow")
+		end
 		self:init()
 		self.slots[0].SetActive(false)
 		self.slots[1].SetActive(false)
