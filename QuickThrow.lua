@@ -95,7 +95,18 @@ function QuickThrow:Start()
 	self.doLoadOutCheck = true
 	self.script.AddValueMonitor("monitorHUDVisibility", "onHUDVisibilityChange")
 	self.script.StartCoroutine(self:FindLoadoutChanger())
-	print("<color=aqua>[Quick Throw] Initialized v1.6.0!</color>")
+	
+	self.URM = GameObject.find("RecoilPrefab(Clone)")
+	self.isUsingURM = (self.URM ~= nil)
+
+	if (self.isUsingURM) then
+		self.URM = self.URM.gameObject.GetComponent(ScriptedBehaviour).self
+		print("Using URM")
+	else
+		print("Not using URM")
+	end
+
+	print("<color=aqua>[Quick Throw] Initialized v1.6.1!</color>")
 end
 
 function QuickThrow:init()
@@ -134,7 +145,7 @@ function QuickThrow:Update()
 			for i = 0, 2, 1 do
 				self.slots[i].SetActive(false)
 			end
-		elseif (SpawnUi.isOpen == false and self.isSpawnUiOpen and not Player.actor.isDead) then
+		elseif (SpawnUi.isOpen == false and self.isSpawnUiOpen and not Player.actor.isDead and #self.throwables > 0) then
 			self.isSpawnUiOpen = false
 			for i = 0, #self.throwables, 1 do
 				self.slots[#self.throwables-i].SetActive(self.ShowHUD)
@@ -162,10 +173,10 @@ function QuickThrow:Update()
 	end
 
 	if(self.timer > 0.025 and self.cooldown == true) or (self.wasInterrupted and self.isThrowing and Player.actor.isFallenOver == false) then
-		print("<color=yellow>[Quick Throw] Return 1 (ignore this if everything is working fine)</color>")
+		--print("<color=yellow>[Quick Throw] Return 1 (ignore this if everything is working fine)</color>")
 		self:ReturnWeapon(true)
 	elseif (Player.actor.activeWeapon ~= self.curthrowable) and self.isThrowing  then
-		print("<color=yellow>[Quick Throw] Return 2 (ignore this if everything is working fine)</color>")
+		--print("<color=yellow>[Quick Throw] Return 2 (ignore this if everything is working fine)</color>")
 		self:ReturnWeapon(false)
 	elseif ((Player.actor.isFallenOver or Player.actor.isInWater) and self.isThrowing) then
 		self.wasInterrupted = true
@@ -233,6 +244,10 @@ function QuickThrow:Throw(index)
 		self.cooldown = true
 		self.curthrowable = Player.actor.activeWeapon
 		self.curthrowable.onFire.AddListener(self,"onFire")
+
+		if(self.globalVarsScript) then
+			self.globalVarsScript.disableFirstDraw = true
+		end
 	end
 end
 
@@ -252,7 +267,7 @@ end
 function QuickThrow:ReturnWeapon(forceEquip)
 	if self.curthrowable == nil then return end
 	
-	self.curThrowable.onFire.RemoveListener(self,"onFire")
+	--self.curThrowable.onFire.RemoveListener(self,"onFire")
 
 	print("<color=yellow>[Quick Throw] returning weapon: " .. self.lastActiveWeapon.name .. " to slot " .. self.lastActiveWeaponIndex .. "</color>")
 	 
@@ -265,7 +280,9 @@ function QuickThrow:ReturnWeapon(forceEquip)
 	self.script.StartCoroutine(self:ApplyAltWeaponAmmo(self.lastActiveWeaponIndex))
 
 	if forceEquip then
-		Player.actor.activeWeapon.animator.SetTrigger("unholster")
+		if Player.actor.activeWeapon then
+			Player.actor.activeWeapon.animator.SetTrigger("unholster")
+		end
 	end
 
 	if self.enhancedHealth and Player.actor.activeWeapon.weaponEntry.name == "Bandage" then
@@ -279,7 +296,11 @@ function QuickThrow:ReturnWeapon(forceEquip)
 	if self.lastActiveWeaponIndex > 1 then
 		self:evaluateLoadout()
 	end
-
+	
+	if self.isUsingURM then
+		self.URM:AssignWeaponStats(Player.actor.activeWeapon)
+	end
+	
 	self.isThrowing = false
 	self.cooldown = false
 	self.curthrowable = nil
@@ -333,11 +354,13 @@ function QuickThrow:onFire()
 	Player.actor.activeWeapon.ammo = 0
 
 	self.hasThrown = true
+
 	if(self.throwableToUse.spareAmmo > 0) then
 		self.throwableToUse.spareAmmo = self.throwableToUse.spareAmmo - 1
 	else
 		self.throwableToUse.ammo = 0
 	end
+
 	self:UpdateDisplay()
 end
 
@@ -347,14 +370,18 @@ end
 
 function QuickThrow:onActorDied(actor,source,isSilent)
 	if(actor.isPlayer) then
-		for i, throwable in pairs(self.throwables) do
-			throwable.onFire.RemoveListener(self,"onStandardThrow")
-		end
+		--for i, throwable in pairs(self.throwables) do
+		--	throwable.onFire.RemoveListener(self,"onStandardThrow")
+		--end
 		self:init()
 		self.slots[0].SetActive(false)
 		self.slots[1].SetActive(false)
 		self.slots[2].SetActive(false)
 		self.targets.Canvas.SetActive(false)
+
+		if(self.globalVarsScript) then
+			self.globalVarsScript.disableFirstDraw = false
+		end
 	end
 end
 
@@ -383,6 +410,11 @@ function QuickThrow:checkForCompat()
 end
 
 function QuickThrow:evaluateLoadout()
+
+	self.slots[0].SetActive(false)
+	self.slots[1].SetActive(false)
+	self.slots[2].SetActive(false)
+
 	self.throwableCount = 0
 	self.throwables = {}
 	for i, weapon in pairs(Player.actor.weaponSlots) do
@@ -428,17 +460,34 @@ function QuickThrow:FindLoadoutChanger()
 	end
 end
 
-function QuickThrow:onOverlayClicked()
-	if not Player.actor.isDead then
-		self.script.StartCoroutine(self:onLoadOutChanged())
+function QuickThrow:FindExtasConfigs()
+	return function()
+		if(self.globalVarsGameObject == nil) then
+			coroutine.yield(WaitForSeconds(1.5))
+			self.globalVarsGameObject = GameObject.Find("PPBGlobalVarss(Clone)")
+			if(self.globalVarsGameObject) then
+				self.globalVarsScript = ScriptedBehaviour.GetScript(self.globalVarsGameObject.gameObject)
+				print(tostring(self.globalVarsScript.disableFirstDraw))
+			end
+		end
 	end
 end
 
-function QuickThrow:onLoadOutChanged()
+function QuickThrow:onOverlayClicked()
+	if not Player.actor.isDead then
+		self.script.StartCoroutine(self:delayedEvaluate())
+	end
+end
+
+function QuickThrow:delayedEvaluate()
 	return function()
-        coroutine.yield(WaitForSeconds(0.1))
+		coroutine.yield(WaitForSeconds(0.1))
 		self:evaluateLoadout()
-    end
+	end
+end
+
+function QuickThrow:doDelayedEvaluate()
+	self.script.StartCoroutine(self:delayedEvaluate())
 end
 
 function QuickThrow:onActorSpawn(actor)
@@ -449,6 +498,9 @@ function QuickThrow:onActorSpawn(actor)
 			self:checkForCompat()
 		end
 		self:evaluateLoadout()
+		if(self.globalVarsGameObject == nil) then
+			self.script.StartCoroutine(self:FindExtasConfigs())
+		end
 	end
 end
 
