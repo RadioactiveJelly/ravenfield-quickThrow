@@ -3,6 +3,8 @@ behaviour("QuickThrow")
 
 function QuickThrow:Awake()
 	self.gameObject.name = "QuickThrow"
+
+	self.weaponReturnListeners = {}
 end
 
 function QuickThrow:Start()
@@ -10,10 +12,10 @@ function QuickThrow:Start()
 	GameEvents.onActorSpawn.AddListener(self,"onActorSpawn")
 	GameEvents.onActorDied.AddListener(self,"onActorDied")
 
-	self.QuickSlotKey1 = self.script.mutator.GetConfigurationString("QuickSlotKey1")
-	self.QuickSlotKey2 = self.script.mutator.GetConfigurationString("QuickSlotKey2")
-	self.QuickSlotKey3 = self.script.mutator.GetConfigurationString("QuickSlotKey3")
-	self.toggleThrowMode = self.script.mutator.GetConfigurationString("toggleThrowMode")
+	self.QuickSlotKey1 = string.lower(self.script.mutator.GetConfigurationString("QuickSlotKey1"))
+	self.QuickSlotKey2 = string.lower(self.script.mutator.GetConfigurationString("QuickSlotKey2"))
+	self.QuickSlotKey3 = string.lower(self.script.mutator.GetConfigurationString("QuickSlotKey3"))
+	self.toggleThrowMode = string.lower(self.script.mutator.GetConfigurationString("toggleThrowMode"))
 	self.ShowHUD = self.script.mutator.GetConfigurationBool("ShowHUD")
 	self.ThrowSpeed = self.script.mutator.GetConfigurationFloat("ThrowSpeed")
 	self.updateDisplayPerFrame = self.script.mutator.GetConfigurationBool("updateDisplayPerFrame")
@@ -106,7 +108,9 @@ function QuickThrow:Start()
 		print("Not using URM")
 	end
 
-	print("<color=aqua>[Quick Throw] Initialized v1.6.1!</color>")
+	
+
+	print("<color=aqua>[Quick Throw] Initialized v2.0.0</color>")
 end
 
 function QuickThrow:init()
@@ -119,6 +123,7 @@ function QuickThrow:init()
 	self.lastActiveWeapon = nil
 	self.lastActiveWeaponIndex = 0
 	self.lastActiveWeaponAmmo = 0
+	self.lastActiveWeaponMaxAmmo = 0
 	self.lastActiveWeaponAmmoReserve = 0
 	self.lastActiveWeaponMaxReserve = 0
 	self.lastActiveWeaponAltWeaponData = {}
@@ -154,16 +159,16 @@ function QuickThrow:Update()
 	end
 
 	if(SpawnUi.isOpen == false and self.isThrowing == false and Player.actor.isFallenOver == false and Player.actor.isInWater == false and self.throwableCount > 0 and Player.actor.isSprinting == false and not self.isLocked) then
-		if Input.GetKeyDown(string.lower(self.QuickSlotKey1)) then
+		if Input.GetKeyDown(self.QuickSlotKey1) then
 			self:Throw(0)
-		elseif Input.GetKeyDown(string.lower(self.QuickSlotKey2)) and self.throwableCount > 1 then
+		elseif Input.GetKeyDown(self.QuickSlotKey2) and self.throwableCount > 1 then
 			self:Throw(1)
-		elseif Input.GetKeyDown(string.lower(self.QuickSlotKey3)) and self.throwableCount > 2 then
+		elseif Input.GetKeyDown(self.QuickSlotKey3) and self.throwableCount > 2 then
 			self:Throw(2)
 		end
 	end
 
-	if Input.GetKeyDown(string.lower(self.toggleThrowMode)) then
+	if Input.GetKeyDown(self.toggleThrowMode) then
 		self.longThrow = not self.longThrow
 		self.throwModeText.gameObject.SetActive(self.longThrow)
 	end
@@ -172,8 +177,10 @@ function QuickThrow:Update()
 		self.timer = self.timer + (0.1 * Time.deltaTime)
 	end
 
-	if(self.timer > 0.025 and self.cooldown == true) or (self.wasInterrupted and self.isThrowing and Player.actor.isFallenOver == false) then
+	if self.timer >= 0.025 and self.cooldown == true and not self.wasInterrupted then
 		--print("<color=yellow>[Quick Throw] Return 1 (ignore this if everything is working fine)</color>")
+		self:ReturnWeapon(true)
+	elseif (self.wasInterrupted and self.isThrowing and Player.actor.isFallenOver == false) then
 		self:ReturnWeapon(true)
 	elseif (Player.actor.activeWeapon ~= self.curthrowable) and self.isThrowing  then
 		--print("<color=yellow>[Quick Throw] Return 2 (ignore this if everything is working fine)</color>")
@@ -210,10 +217,12 @@ function QuickThrow:Throw(index)
 		self.throwableToUse = self.throwables[index]
 	end
 	if(self.throwableToUse and self.throwableToUse ~= Player.actor.activeWeapon) then
+
 		self.hasThrown = false
 
 		self.lastActiveWeapon = Player.actor.activeWeapon.weaponEntry
 		self.lastActiveWeaponIndex = Player.actor.activeWeapon.slot
+		self.lastActiveWeaponMaxAmmo = Player.actor.activeWeapon.maxAmmo
 		self.lastActiveWeaponAmmo = Player.actor.activeWeapon.ammo
 		self.lastActiveWeaponAmmoReserve = Player.actor.activeWeapon.spareAmmo
 		self.lastActiveWeaponMaxReserve = Player.actor.activeWeapon.maxSpareAmmo
@@ -267,25 +276,25 @@ end
 function QuickThrow:ReturnWeapon(forceEquip)
 	if self.curthrowable == nil then return end
 	
-	--self.curThrowable.onFire.RemoveListener(self,"onFire")
-
 	print("<color=yellow>[Quick Throw] returning weapon: " .. self.lastActiveWeapon.name .. " to slot " .. self.lastActiveWeaponIndex .. "</color>")
 	 
-	Player.actor.EquipNewWeaponEntry(self.lastActiveWeapon, self.lastActiveWeaponIndex, forceEquip)
+	local returnedWeapon = Player.actor.EquipNewWeaponEntry(self.lastActiveWeapon, self.lastActiveWeaponIndex, forceEquip)
 
+	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].maxAmmo = self.lastActiveWeaponMaxAmmo
 	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].ammo = self.lastActiveWeaponAmmo
-	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].spareAmmo = self.lastActiveWeaponAmmoReserve
 	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].maxSpareAmmo = self.lastActiveWeaponMaxReserve
+	Player.actor.weaponSlots[self.lastActiveWeaponIndex+1].spareAmmo = self.lastActiveWeaponAmmoReserve
+	
 	
 	self.script.StartCoroutine(self:ApplyAltWeaponAmmo(self.lastActiveWeaponIndex))
 
 	if forceEquip then
-		if Player.actor.activeWeapon then
-			Player.actor.activeWeapon.animator.SetTrigger("unholster")
+		if returnedWeapon then
+			returnedWeapon.animator.SetTrigger("unholster")
 		end
 	end
 
-	if self.enhancedHealth and Player.actor.activeWeapon.weaponEntry.name == "Bandage" then
+	if self.enhancedHealth and returnedWeapon.weaponEntry.name == "Bandage" then
 		self.enhancedHealth.self:addBandageListener(Player.actor.activeWeapon)
 	end
 
@@ -298,7 +307,7 @@ function QuickThrow:ReturnWeapon(forceEquip)
 	end
 	
 	if self.isUsingURM then
-		self.URM:AssignWeaponStats(Player.actor.activeWeapon)
+		self.URM:AssignWeaponStats(returnedWeapon)
 	end
 	
 	self.isThrowing = false
@@ -306,6 +315,8 @@ function QuickThrow:ReturnWeapon(forceEquip)
 	self.curthrowable = nil
 	self.hasThrown = false
 	self.wasInterrupted = false
+
+	self:InvokeWeaponReturnEvent(returnedWeapon)
 end
 
 function QuickThrow:ApplyAltWeaponAmmo(index)
@@ -323,19 +334,19 @@ end
 
 function QuickThrow:isValidWeapon(weapon)
 	for i, name in pairs(self.blackList) do
-		if string.lower(weapon.gameObject.name) == name then 
-			print("<color=red>[Quick Throw] " .. weapon.gameObject.name .. " is black listed.</color>") 
+		if string.lower(weapon.weaponEntry.name) == name then 
+			print("<color=red>[Quick Throw] " .. weapon.weaponEntry.name .. " is black listed.</color>") 
 			return false
 		end
 	end
 	for i, name in pairs(self.whiteList) do
-		if string.lower(weapon.gameObject.name) == name then 
-			print("<color=green>[Quick Throw] " .. weapon.gameObject.name .. " is whitelisted listed.</color>") 
+		if string.lower(weapon.weaponEntry.name) == name then 
+			print("<color=green>[Quick Throw] " .. weapon.weaponEntry.name .. " is whitelisted listed.</color>") 
 			return true
 		end
 	end
 	for y, tag in pairs(weapon.weaponEntry.tags) do
-		print("<color=yellow>[Quick Throw] " .. weapon.gameObject.name .. " has tag " .. tag .. "</color>")
+		print("<color=yellow>[Quick Throw] " .. weapon.weaponEntry.name .. " has tag " .. tag .. "</color>")
 		for x, t in pairs(self.tags) do
 			if t == string.lower(tag) then 
 				return true 
@@ -535,4 +546,18 @@ function QuickThrow:ReplaceHUD(newHUD)
 	self.keyBindTxts[2] = newHUD.keyBindTxts[2]
 
 	self.throwModeText = newHUD.throwModeText
+end
+
+function QuickThrow:SubscribeToWeaponReturnEvent(owner,func)
+	self.weaponReturnListeners[owner] = func
+end
+
+function QuickThrow:UnsubscribeToWeaponReturnEvent(owner)
+	self.weaponReturnListeners[owner] = nil
+end
+
+function QuickThrow:InvokeWeaponReturnEvent(weapon)
+	for owner, func in pairs(self.weaponReturnListeners) do
+		func(weapon)
+	end
 end
