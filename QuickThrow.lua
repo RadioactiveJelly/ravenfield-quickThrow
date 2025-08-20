@@ -34,25 +34,25 @@ function QuickThrow:Start()
 	self.keyBindTxts = {}
 	self.keybinds = {}
 
-	self.slots[0] = self.targets.Slot1GO
-	self.slots[1] = self.targets.Slot2GO
-	self.slots[2] = self.targets.Slot3GO
+	self.slots[1] = self.targets.Slot1GO
+	self.slots[2] = self.targets.Slot2GO
+	self.slots[3] = self.targets.Slot3GO
 
-	self.txtCounts[0] = self.targets.Slot1Count
-	self.txtCounts[1] = self.targets.Slot2Count
-	self.txtCounts[2] = self.targets.Slot3Count
+	self.txtCounts[1] = self.targets.Slot1Count
+	self.txtCounts[2] = self.targets.Slot2Count
+	self.txtCounts[3] = self.targets.Slot3Count
 
-	self.sprites[0] = self.targets.Slot1Sprite
-	self.sprites[1] = self.targets.Slot2Sprite
-	self.sprites[2] = self.targets.Slot3Sprite
+	self.sprites[1] = self.targets.Slot1Sprite
+	self.sprites[2] = self.targets.Slot2Sprite
+	self.sprites[3] = self.targets.Slot3Sprite
 
-	self.keyBindTxts[0] = self.targets.Slot1KeyBind
-	self.keyBindTxts[1] = self.targets.Slot2KeyBind
-	self.keyBindTxts[2] = self.targets.Slot3KeyBind
+	self.keyBindTxts[1] = self.targets.Slot1KeyBind
+	self.keyBindTxts[2] = self.targets.Slot2KeyBind
+	self.keyBindTxts[3] = self.targets.Slot3KeyBind
 
-	self.keybinds[0] = self.QuickSlotKey1
-	self.keybinds[1] = self.QuickSlotKey2
-	self.keybinds[2] = self.QuickSlotKey3
+	self.keybinds[1] = self.QuickSlotKey1
+	self.keybinds[2] = self.QuickSlotKey2
+	self.keybinds[3] = self.QuickSlotKey3
 
 	self.throwModeText = self.targets.ThrowModeText
 
@@ -147,24 +147,30 @@ function QuickThrow:Update()
 	if(self.hasCheckedForCompat) then
 		if (SpawnUi.isOpen and self.isSpawnUiOpen == false) then
 			self.isSpawnUiOpen = true
-			for i = 0, 2, 1 do
-				self.slots[i].SetActive(false)
+			for i = 1, 3, 1 do
+				local throwable = self.throwables[i]
+				if throwable then
+					self.slots[i].SetActive(false)
+				end
 			end
-		elseif (SpawnUi.isOpen == false and self.isSpawnUiOpen and not Player.actor.isDead and #self.throwables > 0) then
+		elseif (SpawnUi.isOpen == false and self.isSpawnUiOpen and not Player.actor.isDead) then
 			self.isSpawnUiOpen = false
-			for i = 0, #self.throwables, 1 do
-				self.slots[#self.throwables-i].SetActive(self.ShowHUD)
+			for i = 1, 3, 1 do
+				local throwable = self.throwables[i]
+				if throwable then
+					self.slots[i].SetActive(self.ShowHUD)
+				end
 			end
 		end
 	end
 
-	if(SpawnUi.isOpen == false and self.isThrowing == false and Player.actor.isFallenOver == false and Player.actor.isInWater == false and self.throwableCount > 0 and Player.actor.isSprinting == false and not self.isLocked) then
+	if(SpawnUi.isOpen == false and self.isThrowing == false and Player.actor.isFallenOver == false and Player.actor.isInWater == false and Player.actor.isSprinting == false and not self.isLocked) then
 		if Input.GetKeyDown(self.QuickSlotKey1) then
-			self:Throw(0)
-		elseif Input.GetKeyDown(self.QuickSlotKey2) and self.throwableCount > 1 then
 			self:Throw(1)
-		elseif Input.GetKeyDown(self.QuickSlotKey3) and self.throwableCount > 2 then
+		elseif Input.GetKeyDown(self.QuickSlotKey2) then
 			self:Throw(2)
+		elseif Input.GetKeyDown(self.QuickSlotKey3) then
+			self:Throw(3)
 		end
 	end
 
@@ -178,12 +184,12 @@ function QuickThrow:Update()
 	end
 
 	if self.timer >= 0.025 and self.cooldown == true and not self.wasInterrupted then
-		--print("<color=yellow>[Quick Throw] Return 1 (ignore this if everything is working fine)</color>")
+		print("<color=yellow>[Quick Throw] Return 1 (ignore this if everything is working fine)</color>")
 		self:ReturnWeapon(true)
 	elseif (self.wasInterrupted and self.isThrowing and Player.actor.isFallenOver == false) then
 		self:ReturnWeapon(true)
 	elseif (Player.actor.activeWeapon ~= self.curthrowable) and self.isThrowing  then
-		--print("<color=yellow>[Quick Throw] Return 2 (ignore this if everything is working fine)</color>")
+		print("<color=yellow>[Quick Throw] Return 2 (ignore this if everything is working fine)</color>")
 		self:ReturnWeapon(false)
 	elseif ((Player.actor.isFallenOver or Player.actor.isInWater) and self.isThrowing) then
 		self.wasInterrupted = true
@@ -195,28 +201,37 @@ function QuickThrow:Update()
 end
 
 function QuickThrow:UpdateDisplay()
-	for i = 0, #self.throwables, 1 do
-		if self.throwables[i].spareAmmo > 0 then
-			self.txtCounts[#self.throwables-i].color = Color.white
-			self.txtCounts[#self.throwables-i].text = self.throwables[i].ammo + self.throwables[i].spareAmmo
-		else
-			if(self.throwables[i].ammo > 0) then
-				self.txtCounts[#self.throwables-i].color = Color.white
-				self.txtCounts[#self.throwables-i].text = self.throwables[i].ammo
+	local throwableCount = 0
+	for i = 1, 3, 1 do
+		local throwable = self.throwables[i]
+		if throwable then
+			throwableCount = throwableCount + 1
+			if throwable.spareAmmo > 0 then
+				self.txtCounts[throwableCount].color = Color.white
+				self.txtCounts[throwableCount].text = throwable.ammo + throwable.spareAmmo
 			else
-				self.txtCounts[#self.throwables-i].color = Color.red
-				self.txtCounts[#self.throwables-i].text = 0
+				if(throwable.ammo > 0) then
+					self.txtCounts[throwableCount].color = Color.white
+					self.txtCounts[throwableCount].text = throwable.ammo
+				else
+					self.txtCounts[throwableCount].color = Color.red
+					self.txtCounts[throwableCount].text = 0
+				end
 			end
 		end
 	end
 end
 
 function QuickThrow:Throw(index)
+	local throwable = self.throwables[index]
+	if throwable == nil then print("No throwable in index: " .. index) return end
+
 	self.throwableToUse = nil
-	if(self.throwables[index].spareAmmo > 0 or self.throwables[index].ammo > 0) or self.throwables[index].weaponEntry.name == "Armor" then
-		self.throwableToUse = self.throwables[index]
+	if(throwable.spareAmmo > 0 or throwable.ammo > 0) or throwable.weaponEntry.name == "Armor" then
+		self.throwableToUse = throwable
 	end
-	if(self.throwableToUse and self.throwableToUse ~= Player.actor.activeWeapon) then
+
+	if self.throwableToUse and self.throwableToUse ~= Player.actor.activeWeapon then
 
 		self.hasThrown = false
 
@@ -333,6 +348,11 @@ function QuickThrow:ApplyAltWeaponAmmo(index)
 end
 
 function QuickThrow:isValidWeapon(weapon)
+	if weapon == nil then return false end
+
+	if Extensions.Get("jellylib") then
+		if not WeaponUtils.IsThrowableWeapon(weapon) then return false end
+	end
 	for i, name in pairs(self.blackList) do
 		if string.lower(weapon.weaponEntry.name) == name then 
 			print("<color=red>[Quick Throw] " .. weapon.weaponEntry.name .. " is black listed.</color>") 
@@ -385,9 +405,9 @@ function QuickThrow:onActorDied(actor,source,isSilent)
 		--	throwable.onFire.RemoveListener(self,"onStandardThrow")
 		--end
 		self:init()
-		self.slots[0].SetActive(false)
 		self.slots[1].SetActive(false)
 		self.slots[2].SetActive(false)
+		self.slots[3].SetActive(false)
 		self.targets.Canvas.SetActive(false)
 
 		if(self.globalVarsScript) then
@@ -422,37 +442,42 @@ end
 
 function QuickThrow:evaluateLoadout()
 
-	self.slots[0].SetActive(false)
 	self.slots[1].SetActive(false)
 	self.slots[2].SetActive(false)
+	self.slots[3].SetActive(false)
 
 	self.throwableCount = 0
+	local gears = {
+		[1] = Player.actor.weaponSlots[3],
+		[2] = Player.actor.weaponSlots[4],
+		[3] = Player.actor.weaponSlots[5]
+	}
+
 	self.throwables = {}
-	for i, weapon in pairs(Player.actor.weaponSlots) do
-		if(self:isValidWeapon(weapon)) then
-			weapon.onFire.AddListener(self,"onStandardThrow");
-			self.throwables[self.throwableCount] = weapon
-			self.throwableCount = self.throwableCount + 1
-		end
-	end
-	if(self.throwableCount > 0) then
-		for i = 0, #self.throwables, 1 do
-			self.slots[#self.throwables-i].SetActive(self.ShowHUD)
-			self.sprites[#self.throwables-i].sprite = self.throwables[i].uiSprite
-			if string.find(self.keybinds[i], "mouse") then
+	local throwableCount = 0
+	for i = 1, 3, 1 do
+		local gear = gears[i]
+		if gears and self:isValidWeapon(gear) then
+			self.throwables[i] = gear
+			throwableCount = throwableCount + 1
+			self.slots[throwableCount].SetActive(self.ShowHUD)
+			self.sprites[throwableCount].sprite = gear.uiSprite
+			if string.find(self.keybinds[throwableCount], "mouse") then
 				local num = nil
-				for word in string.gmatch(self.keybinds[i], '%S+') do
+				for word in string.gmatch(self.keybinds[throwableCount], '%S+') do
 					num = word
 				end
 				if num then
-					self.keyBindTxts[#self.throwables-i].text = "M" .. num
-					self.keyBindTxts[#self.throwables-i].fontSize = 10
+					self.keyBindTxts[throwableCount].text = "M" .. num
+					self.keyBindTxts[throwableCount].fontSize = 10
 				end
 			else
-				self.keyBindTxts[#self.throwables-i].text = self.keybinds[i]
-				self.keyBindTxts[#self.throwables-i].fontSize = 14
+				self.keyBindTxts[throwableCount].text = self.keybinds[i]
+				self.keyBindTxts[throwableCount].fontSize = 14
 			end
 			self:UpdateDisplay()
+		else
+			self.throwables[i] = nil
 		end
 	end
 end
@@ -529,21 +554,21 @@ function QuickThrow:ReplaceHUD(newHUD)
 	self.sprites = {}
 	self.keyBindTxts = {}
 
-	self.slots[0] = newHUD.slots[0]
-	self.slots[1] = newHUD.slots[1]
-	self.slots[2] = newHUD.slots[2]
+	self.slots[1] = newHUD.slots[0]
+	self.slots[2] = newHUD.slots[1]
+	self.slots[3] = newHUD.slots[2]
 
-	self.txtCounts[0] = newHUD.txtCounts[0]
-	self.txtCounts[1] = newHUD.txtCounts[1]
-	self.txtCounts[2] = newHUD.txtCounts[2]
+	self.txtCounts[1] = newHUD.txtCounts[0]
+	self.txtCounts[2] = newHUD.txtCounts[1]
+	self.txtCounts[3] = newHUD.txtCounts[2]
 
-	self.sprites[0] = newHUD.sprites[0]
-	self.sprites[1] = newHUD.sprites[1]
-	self.sprites[2] = newHUD.sprites[2]
+	self.sprites[1] = newHUD.sprites[0]
+	self.sprites[2] = newHUD.sprites[1]
+	self.sprites[3] = newHUD.sprites[2]
 
-	self.keyBindTxts[0] = newHUD.keyBindTxts[0]
-	self.keyBindTxts[1] = newHUD.keyBindTxts[1]
-	self.keyBindTxts[2] = newHUD.keyBindTxts[2]
+	self.keyBindTxts[1] = newHUD.keyBindTxts[0]
+	self.keyBindTxts[2] = newHUD.keyBindTxts[1]
+	self.keyBindTxts[3] = newHUD.keyBindTxts[2]
 
 	self.throwModeText = newHUD.throwModeText
 end
