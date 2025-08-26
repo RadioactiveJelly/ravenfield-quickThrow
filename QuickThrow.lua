@@ -573,6 +573,13 @@ function QuickThrow:ReplaceHUD(newHUD)
 	self.throwModeText = newHUD.throwModeText
 end
 
+function QuickThrow:ToggleHUD(val)
+	self.ShowHUD = val
+	self.targets.Slot1GO.SetActive(self.ShowHUD)
+	self.targets.Slot2GO.SetActive(self.ShowHUD)
+	self.targets.Slot3GO.SetActive(self.ShowHUD)
+end
+
 function QuickThrow:SubscribeToWeaponReturnEvent(owner,func)
 	self.weaponReturnListeners[owner] = func
 end
